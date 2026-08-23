@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vendix</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+<style>
+body{background:#f5f6fa}
+.navbar{height:65px}
+.sidebar{position:fixed;top:0;left:-280px;width:280px;height:100vh;background:#212529;z-index:2000;transition:.3s;padding-top:70px}
+.sidebar.active{left:0}
+.sidebar a{display:block;color:#fff;text-decoration:none;padding:14px 25px}
+.sidebar a:hover{background:#343a40}
+.sidebar-title{color:#fff;font-size:24px;font-weight:bold;padding:20px 25px}
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:1500;display:none}
+.overlay.active{display:block}
+.menu-btn{border:0;background:transparent;color:#fff;font-size:25px;margin-right:15px}
+.card{border:0;border-radius:15px}
+.stat-card{min-height:125px}
+.stat-number{font-size:28px;font-weight:bold}
+.producto-card{border:1px solid #eee;border-radius:12px;padding:15px;background:#fff;margin-bottom:10px}
+.stock-bajo{background:#fff0f0}
+.section-title{font-weight:700}
+</style>
+</head>
+<body>
+
+<div id="overlay" class="overlay" onclick="cerrarMenu()"></div>
+
+<div id="sidebar" class="sidebar">
+    <div class="sidebar-title"><i class="fa-solid fa-store"></i> Vendix</div>
+    <a href="/"><i class="fa-solid fa-house me-2"></i>Inicio</a>
+    <a href="#ventas" onclick="cerrarMenu()"><i class="fa-solid fa-cart-shopping me-2"></i>Ventas</a>
+    <a href="#inventario" onclick="cerrarMenu()"><i class="fa-solid fa-boxes-stacked me-2"></i>Productos / Inventario</a>
+    <a href="/reportes"><i class="fa-solid fa-chart-column me-2"></i>Reportes</a>
+    <a href="#caja" onclick="cerrarMenu()"><i class="fa-solid fa-wallet me-2"></i>Caja</a>
+    <a href="#historial" onclick="cerrarMenu()"><i class="fa-solid fa-clock-rotate-left me-2"></i>Historial / Archivador</a>
+    <a href="#config" onclick="cerrarMenu()"><i class="fa-solid fa-gear me-2"></i>Configuración</a>
+</div>
+
+<nav class="navbar navbar-dark bg-dark shadow-sm">
+    <div class="container-fluid">
+        <button class="menu-btn" onclick="abrirMenu()"><i class="fa-solid fa-bars"></i></button>
+        <span class="navbar-brand fw-bold"><i class="fa-solid fa-store"></i> Vendix</span>
+        {% if caja_cerrada %}
+        <span class="badge bg-danger">CAJA CERRADA</span>
+        {% elif caja_abierta %}
+        <span class="badge bg-success">CAJA ABIERTA · L. {{ "%.2f"|format(monto_inicial) }}</span>
+        {% else %}
+        <span class="badge bg-warning text-dark">CAJA SIN ABRIR</span>
+        {% endif %}
+    </div>
+</nav>
+
+<div class="container my-4">
+
+{% if not caja_abierta and not reporte and not caja_cerrada %}
+<div class="alert alert-warning shadow-sm d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <div>
+        <strong><i class="fa-solid fa-cash-register"></i> La caja de hoy todavía no está abierta.</strong><br>
+        <small>Ingresa el dinero con el que empiezas el día antes de registrar ventas.</small>
+    </div>
+    <button class="btn btn-warning" data-bs-toggle="modal" data-bs-target="#modalAbrirCaja">
+        <i class="fa-solid fa-lock-open"></i> Abrir caja
+    </button>
+</div>
+{% endif %}
+
+{% if reporte %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2 class="section-title"><i class="fa-solid fa-chart-column"></i> Reportes</h2>
+        <p class="text-muted mb-0">Resumen de ventas e inventario vendido de hoy.</p>
+    </div>
+    <a href="/" class="btn btn-outline-dark"><i class="fa-solid fa-arrow-left"></i> Inicio</a>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-3"><div class="card shadow-sm"><div class="card-body">
+        <small class="text-muted">Ventas</small><h3>L. {{ "%.2f"|format(ventas_hoy) }}</h3>
+    </div></div></div>
+    <div class="col-md-3"><div class="card shadow-sm"><div class="card-body">
+        <small class="text-muted">Efectivo</small><h3>L. {{ "%.2f"|format(efectivo) }}</h3>
+    </div></div></div>
+    <div class="col-md-3"><div class="card shadow-sm"><div class="card-body">
+        <small class="text-muted">Transferencias</small><h3>L. {{ "%.2f"|format(digital) }}</h3>
+    </div></div></div>
+    <div class="col-md-3"><div class="card shadow-sm"><div class="card-body">
+        <small class="text-muted">Pedidos vendidos</small><h3>{{ pedidos_hoy }}</h3>
+    </div></div></div>
+</div>
+
+<div class="card shadow-sm mb-4">
+<div class="card-header bg-white"><h5 class="mb-0">Productos vendidos hoy</h5></div>
+<div class="card-body table-responsive">
+<table class="table">
+<thead><tr><th>Producto</th><th>Cantidad</th><th>Total</th></tr></thead>
+<tbody>
+{% for x in productos_vendidos %}
+<tr><td>{{ x.nombre }}</td><td>{{ x.cantidad }}</td><td>L. {{ "%.2f"|format(x.total) }}</td></tr>
+{% else %}
+<tr><td colspan="3" class="text-center text-muted">Todavía no hay ventas entregadas.</td></tr>
+{% endfor %}
+</tbody>
+</table>
+</div></div>
+
+<div class="card shadow-sm">
+<div class="card-header bg-white"><h5 class="mb-0">Cierres anteriores</h5></div>
+<div class="card-body table-responsive">
+<table class="table">
+<thead><tr><th>Fecha</th><th>Ventas</th><th>Efectivo</th><th>Retiros</th><th>Caja</th><th>Cierre</th></tr></thead>
+<tbody>
+{% for c in cierres %}
+<tr>
+<td>{{ c.fecha }}</td><td>L. {{ "%.2f"|format(c.ventas) }}</td>
+<td>L. {{ "%.2f"|format(c.efectivo) }}</td><td>L. {{ "%.2f"|format(c.retiros) }}</td>
+<td>L. {{ "%.2f"|format(c.total_caja) }}</td><td>{{ c.fecha_cierre }}</td>
+</tr>
+{% else %}
+<tr><td colspan="6" class="text-center text-muted">No hay cierres registrados.</td></tr>
+{% endfor %}
+</tbody></table>
+</div></div>
+
+{% else %}
+
+<div class="row g-3 mb-4">
+    <div class="col-md-3"><div class="card shadow-sm stat-card"><div class="card-body">
+        <h6 class="text-muted">Ventas de hoy</h6><div class="stat-number text-primary">L. {{ "%.2f"|format(ventas_hoy) }}</div>
+    </div></div></div>
+    <div class="col-md-3"><div class="card shadow-sm stat-card"><div class="card-body">
+        <h6 class="text-muted">Efectivo</h6><div class="stat-number text-success">L. {{ "%.2f"|format(efectivo) }}</div>
+    </div></div></div>
+    <div class="col-md-3"><div class="card shadow-sm stat-card"><div class="card-body">
+        <h6 class="text-muted">Digital</h6><div class="stat-number text-info">L. {{ "%.2f"|format(digital) }}</div>
+    </div></div></div>
+    <div class="col-md-3"><div class="card shadow-sm stat-card"><div class="card-body">
+        <h6 class="text-muted">Pedidos vendidos</h6><div class="stat-number">{{ pedidos_hoy }}</div>
+    </div></div></div>
+</div>
+
+<div id="ventas" class="d-flex justify-content-between flex-wrap gap-2 mb-4">
+    {% if not caja_abierta and not caja_cerrada %}
+    <button class="btn btn-warning" data-bs-toggle="modal" data-bs-target="#modalAbrirCaja">
+        <i class="fa-solid fa-cash-register"></i> Abrir caja
+    </button>
+    {% endif %}
+    <button class="btn btn-primary" {% if caja_cerrada or not caja_abierta %}disabled{% endif %} data-bs-toggle="modal" data-bs-target="#modalPedido">
+        <i class="fa-solid fa-plus"></i> Nuevo pedido
+    </button>
+    <button class="btn btn-warning" {% if caja_cerrada %}disabled{% endif %} data-bs-toggle="modal" data-bs-target="#modalRetiro">
+        <i class="fa-solid fa-wallet"></i> Registrar retiro
+    </button>
+    <a href="/reportes" class="btn btn-dark"><i class="fa-solid fa-chart-column"></i> Ver reportes</a>
+</div>
+
+{% if caja_cerrada %}
+<div class="alert alert-danger"><i class="fa-solid fa-lock"></i>
+    <strong>La caja de hoy está cerrada.</strong> Las ventas y retiros están bloqueados.
+</div>
+{% endif %}
+
+<div class="card shadow-sm mb-4" id="ventas">
+<div class="card-header bg-white"><h5 class="mb-0"><i class="fa-solid fa-clipboard-list"></i> Pedidos activos</h5></div>
+<div class="card-body table-responsive">
+<table class="table align-middle">
+<thead><tr><th>Pedido</th><th>Cliente</th><th>Total</th><th>Pago</th><th>Estado</th><th>Fecha</th><th>Acciones</th></tr></thead>
+<tbody>
+{% for p in pedidos %}
+<tr>
+<td><strong>PED-{{ "%04d"|format(p.id) }}</strong></td>
+<td>{{ p.cliente }}</td>
+<td><strong>L. {{ "%.2f"|format(p.total) }}</strong></td>
+<td>{{ p.metodo_pago }}</td>
+<td>
+{% if p.estado == "Pendiente" %}<span class="badge bg-warning text-dark">Pendiente</span>
+{% else %}<span class="badge bg-success">Entregado</span>{% endif %}
+</td>
+<td>{{ p.fecha }}</td>
+<td class="d-flex gap-1">
+{% if p.estado == "Pendiente" %}
+<form action="/entregar/{{ p.id }}" method="POST">
+<button class="btn btn-sm btn-success" {% if caja_cerrada %}disabled{% endif %} title="Entregar y descontar stock">
+<i class="fa-solid fa-check"></i> Entregar
+</button></form>
+{% elif p.estado == "Entregado" %}
+<form action="/archivar/{{ p.id }}" method="POST">
+<button class="btn btn-sm btn-primary" title="Archivar pedido">
+<i class="fa-solid fa-box-archive"></i> Archivar
+</button></form>
+{% endif %}
+{% if p.estado != "Archivado" %}
+<form action="/cancelar/{{ p.id }}" method="POST" onsubmit="return confirm('¿Cancelar este pedido? Si ya fue entregado, el stock será devuelto.')">
+<button class="btn btn-sm btn-outline-danger" {% if caja_cerrada %}disabled{% endif %}><i class="fa-solid fa-xmark"></i></button>
+</form>
+{% endif %}
+</td>
+</tr>
+{% else %}
+<tr><td colspan="7" class="text-center text-muted py-4">No hay pedidos activos.</td></tr>
+{% endfor %}
+</tbody></table>
+</div></div>
+
+<div class="card shadow-sm mb-4" id="inventario">
+<div class="card-header bg-white d-flex justify-content-between">
+<h5 class="mb-0"><i class="fa-solid fa-boxes-stacked"></i> Productos e inventario</h5>
+<button class="btn btn-sm btn-success" data-bs-toggle="modal" data-bs-target="#modalProducto"><i class="fa-solid fa-plus"></i> Agregar producto</button>
+</div>
+<div class="card-body"><div class="row">
+{% for producto in productos %}
+<div class="col-md-4">
+<div class="producto-card {% if producto.stock <= producto.stock_minimo %}stock-bajo{% endif %}">
+<h6 class="fw-bold">{{ producto.nombre }}</h6>
+<span class="badge bg-secondary">{{ producto.categoria }}</span>
+<p class="mb-1 mt-2">Precio: <strong>L. {{ "%.2f"|format(producto.precio) }}</strong></p>
+<p class="mb-2">Stock: <strong>{{ producto.stock }} {{ producto.unidad }}</strong></p>
+{% if producto.stock <= producto.stock_minimo %}
+<span class="badge bg-danger">Stock bajo</span>
+{% else %}<span class="badge bg-success">Stock disponible</span>{% endif %}
+<form action="/editar_stock" method="POST" class="d-flex mt-3">
+<input type="hidden" name="producto_id" value="{{ producto.id }}">
+<input type="number" step="0.1" name="nuevo_stock" value="{{ producto.stock }}" class="form-control form-control-sm">
+<button class="btn btn-sm btn-primary ms-1"><i class="fa-solid fa-save"></i></button>
+</form>
+</div></div>
+{% else %}
+<div class="text-center text-muted">Todavía no hay productos.</div>
+{% endfor %}
+</div></div></div>
+
+<div class="card shadow-sm mb-4" id="historial">
+<div class="card-header bg-white"><h5 class="mb-0"><i class="fa-solid fa-box-archive"></i> Historial / Archivador</h5></div>
+<div class="card-body table-responsive">
+<table class="table table-striped align-middle">
+<thead><tr><th>Pedido</th><th>Cliente</th><th>Total</th><th>Pago</th><th>Estado</th><th>Fecha</th></tr></thead>
+<tbody>
+{% for h in historial %}
+<tr>
+<td>PED-{{ "%04d"|format(h.id) }}</td><td>{{ h.cliente }}</td>
+<td>L. {{ "%.2f"|format(h.total) }}</td><td>{{ h.metodo_pago }}</td>
+<td>{% if h.estado=="Cancelado" %}<span class="badge bg-danger">Cancelado</span>{% else %}<span class="badge bg-primary">Archivado</span>{% endif %}</td>
+<td>{{ h.fecha }}</td>
+</tr>
+{% else %}
+<tr><td colspan="6" class="text-center text-muted py-4">No hay pedidos archivados.</td></tr>
+{% endfor %}
+</tbody></table>
+</div></div>
+
+<div class="card shadow-sm mb-4" id="caja">
+<div class="card-header bg-white"><h5 class="mb-0"><i class="fa-solid fa-cash-register"></i> Caja</h5></div>
+<div class="card-body">
+<div class="row g-3">
+<div class="col-md-3"><strong>Monto inicial:</strong><br><span class="text-primary">L. {{ "%.2f"|format(monto_inicial) }}</span></div>
+<div class="col-md-3"><strong>Ventas en efectivo:</strong><br>L. {{ "%.2f"|format(efectivo) }}</div>
+<div class="col-md-3"><strong>Retiros:</strong><br>L. {{ "%.2f"|format(retiros) }}</div>
+<div class="col-md-3"><strong>Efectivo esperado:</strong><br><strong>L. {{ "%.2f"|format(total_caja) }}</strong></div>
+</div>
+<div class="mt-3 p-3 bg-light rounded">
+    <strong>Fórmula:</strong>
+    Monto inicial + ventas en efectivo - retiros =
+    <strong>L. {{ "%.2f"|format(total_caja) }}</strong>
+</div>
+<hr>
+{% if not caja_abierta and not caja_cerrada %}
+<button class="btn btn-warning" data-bs-toggle="modal" data-bs-target="#modalAbrirCaja">
+    <i class="fa-solid fa-lock-open"></i> Abrir caja
+</button>
+{% elif not caja_cerrada %}
+<form action="/cerrar_caja" method="POST" onsubmit="return confirm('¿Confirmas el cierre de caja? Después no se podrán registrar ventas ni retiros hoy.')">
+<button class="btn btn-danger"><i class="fa-solid fa-lock"></i> Cerrar caja de hoy</button>
+</form>
+{% else %}
+<div class="alert alert-success mb-0"><i class="fa-solid fa-lock"></i> Caja cerrada correctamente. Monto inicial: L. {{ "%.2f"|format(monto_inicial) }} · Efectivo esperado: L. {{ "%.2f"|format(total_caja) }}</div>
+{% endif %}
+</div></div>
+
+<div id="config"></div>
+
+<!-- MODAL ABRIR CAJA -->
+<div class="modal fade" id="modalAbrirCaja">
+<div class="modal-dialog"><div class="modal-content">
+<form action="/abrir_caja" method="POST">
+<div class="modal-header">
+    <h5 class="modal-title"><i class="fa-solid fa-cash-register"></i> Abrir caja del día</h5>
+    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+</div>
+<div class="modal-body">
+    <div class="alert alert-info">
+        Ingresa cuánto dinero físico tienes en caja al comenzar el día.
+        Este monto quedará registrado y no se reemplazará durante el día.
+    </div>
+    <label class="form-label">Monto inicial de caja</label>
+    <div class="input-group">
+        <span class="input-group-text">L.</span>
+        <input type="number" name="monto_inicial" class="form-control" min="0" step="0.01" value="0" required>
+    </div>
+</div>
+<div class="modal-footer">
+    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+    <button class="btn btn-warning"><i class="fa-solid fa-lock-open"></i> Abrir caja</button>
+</div>
+</form>
+</div></div></div>
+
+<!-- MODAL PRODUCTO -->
+<div class="modal fade" id="modalProducto">
+<div class="modal-dialog"><div class="modal-content">
+<form action="/agregar_producto" method="POST">
+<div class="modal-header"><h5 class="modal-title">Agregar producto</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+<div class="modal-body">
+<label class="form-label">Nombre</label><input name="nombre" class="form-control mb-3" required>
+<label class="form-label">Categoría</label>
+<select name="categoria" class="form-select mb-3">
+<option>Comidas</option><option>Bebidas</option><option>Postres</option><option>Extras</option><option>Otros</option>
+</select>
+<label class="form-label">Precio</label><input type="number" step="0.01" name="precio" class="form-control mb-3" required>
+<label class="form-label">Cantidad inicial</label><input type="number" step="0.1" name="stock" class="form-control mb-3" required>
+<label class="form-label">Unidad</label><input name="unidad" value="Unidades" class="form-control mb-3" required>
+<label class="form-label">Stock mínimo</label><input type="number" step="0.1" name="stock_minimo" value="2" class="form-control" required>
+</div>
+<div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button><button class="btn btn-success">Guardar producto</button></div>
+</form></div></div></div>
+
+<!-- MODAL PEDIDO -->
+<div class="modal fade" id="modalPedido">
+<div class="modal-dialog modal-lg"><div class="modal-content">
+<form action="/crear_pedido" method="POST" id="formPedido">
+<div class="modal-header"><h5 class="modal-title"><i class="fa-solid fa-cart-shopping"></i> Nuevo pedido</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+<div class="modal-body">
+<label class="form-label">Cliente</label><input name="cliente" class="form-control mb-3" required>
+<label class="form-label">Dirección</label><input name="direccion" class="form-control mb-3">
+<label class="form-label">Método de pago</label>
+<select name="metodo_pago" class="form-select mb-4"><option>Efectivo</option><option>Transferencia</option></select>
+<hr><h6>Productos</h6>
+<div id="productosPedido">
+<div class="row producto-linea mb-2">
+<div class="col-md-7">
+<select name="producto_id[]" class="form-select producto-select" onchange="calcularTotal()" required>
+<option value="">Seleccionar producto</option>
+{% for producto in productos %}
+<option value="{{ producto.id }}" data-precio="{{ producto.precio }}" data-stock="{{ producto.stock }}">
+{{ producto.nombre }} - L. {{ "%.2f"|format(producto.precio) }} (Stock: {{ producto.stock }})
+</option>
+{% endfor %}
+</select></div>
+<div class="col-md-3"><input type="number" name="cantidad[]" value="1" min="1" step="1" class="form-control cantidad" oninput="calcularTotal()" required></div>
+<div class="col-md-2"><button type="button" class="btn btn-outline-danger" onclick="eliminarLinea(this)"><i class="fa-solid fa-trash"></i></button></div>
+</div></div>
+<button type="button" class="btn btn-outline-primary mt-2" onclick="agregarProducto()"><i class="fa-solid fa-plus"></i> Agregar otro producto</button>
+<div class="text-end mt-4"><h4>Total: <span id="totalPedido">L. 0.00</span></h4></div>
+</div>
+<div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button><button class="btn btn-primary">Guardar pedido</button></div>
+</form></div></div></div>
+
+<!-- MODAL RETIRO -->
+<div class="modal fade" id="modalRetiro">
+<div class="modal-dialog"><div class="modal-content">
+<form action="/registrar_retiro" method="POST">
+<div class="modal-header"><h5 class="modal-title">Registrar retiro</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+<div class="modal-body">
+<label class="form-label">Concepto</label><input name="concepto" class="form-control mb-3" placeholder="Compra de gas, hielo, etc." required>
+<label class="form-label">Monto</label><input type="number" step="0.01" name="monto" class="form-control" required>
+</div>
+<div class="modal-footer"><button class="btn btn-warning">Registrar retiro</button></div>
+</form></div></div></div>
+
+{% endif %}
+</div>
+
+<script>
+function abrirMenu(){document.getElementById("sidebar").classList.add("active");document.getElementById("overlay").classList.add("active")}
+function cerrarMenu(){document.getElementById("sidebar").classList.remove("active");document.getElementById("overlay").classList.remove("active")}
+
+function agregarProducto(){
+    const cont=document.getElementById("productosPedido");
+    const primera=document.querySelector(".producto-linea");
+    const nueva=primera.cloneNode(true);
+    nueva.querySelector("select").value="";
+    nueva.querySelector("input").value=1;
+    cont.appendChild(nueva);
+    calcularTotal();
+}
+function eliminarLinea(btn){
+    const lineas=document.querySelectorAll(".producto-linea");
+    if(lineas.length===1){
+        lineas[0].querySelector("select").value="";
+        lineas[0].querySelector("input").value=1;
+    }else{
+        btn.closest(".producto-linea").remove();
+    }
+    calcularTotal();
+}
+function calcularTotal(){
+    let total=0;
+    document.querySelectorAll(".producto-linea").forEach(linea=>{
+        const select=linea.querySelector(".producto-select");
+        const cantidad=parseFloat(linea.querySelector(".cantidad").value)||0;
+        if(select && select.value){
+            const op=select.options[select.selectedIndex];
+            const precio=parseFloat(op.dataset.precio)||0;
+            total += precio*cantidad;
+        }
+    });
+    const el=document.getElementById("totalPedido");
+    if(el) el.textContent="L. "+total.toFixed(2);
+}
+document.addEventListener("DOMContentLoaded",calcularTotal);
+</script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
