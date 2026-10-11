@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -24,14 +23,17 @@ body{background:#f5f6fa}
 .producto-card{border:1px solid #eee;border-radius:12px;padding:15px;background:#fff;margin-bottom:10px}
 .stock-bajo{background:#fff0f0}
 .section-title{font-weight:700}
- 
+
 /* --- Notas de retiro / gasto --- */
 .retiro-item{border:1px solid #f1d9b5;background:#fff9ef;border-radius:12px;padding:12px 14px;margin-bottom:10px}
 .retiro-item .concepto{font-weight:600;color:#3a2f00}
 .retiro-item .nota-icono{color:#e0a800}
 .retiro-item .hora{font-size:.8rem}
 .retiro-monto{font-weight:700;white-space:nowrap}
- 
+
+/* --- Nota del pedido (ej: sin cebolla) --- */
+.nota-pedido{display:inline-block;margin-top:4px;padding:2px 8px;border-radius:8px;background:#fff9ef;border:1px solid #f1d9b5;color:#6b5200;font-size:.82rem}
+
 /* --- Ajustes para verse bien en celular --- */
 @media (max-width: 576px){
   .container{padding-left:12px;padding-right:12px}
@@ -52,9 +54,9 @@ body{background:#f5f6fa}
 </style>
 </head>
 <body>
- 
+
 <div id="overlay" class="overlay" onclick="cerrarMenu()"></div>
- 
+
 <div id="sidebar" class="sidebar">
     <div class="sidebar-title"><i class="fa-solid fa-store"></i> Vendix</div>
     <a href="/"><i class="fa-solid fa-house me-2"></i>Inicio</a>
@@ -64,8 +66,9 @@ body{background:#f5f6fa}
     <a href="#caja" onclick="cerrarMenu()"><i class="fa-solid fa-wallet me-2"></i>Caja</a>
     <a href="#historial" onclick="cerrarMenu()"><i class="fa-solid fa-clock-rotate-left me-2"></i>Historial / Archivador</a>
     <a href="#config" onclick="cerrarMenu()"><i class="fa-solid fa-gear me-2"></i>Configuración</a>
+    <a href="/salir"><i class="fa-solid fa-right-from-bracket me-2"></i>Salir</a>
 </div>
- 
+
 <nav class="navbar navbar-dark bg-dark shadow-sm">
     <div class="container-fluid">
         <button class="menu-btn" onclick="abrirMenu()"><i class="fa-solid fa-bars"></i></button>
@@ -79,9 +82,18 @@ body{background:#f5f6fa}
         {% endif %}
     </div>
 </nav>
- 
+
 <div class="container my-4">
- 
+
+{% with mensajes = get_flashed_messages(with_categories=true) %}
+{% for categoria, mensaje in mensajes %}
+<div class="alert alert-{{ categoria }} alert-dismissible fade show shadow-sm">
+    {{ mensaje }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endfor %}
+{% endwith %}
+
 {% if not caja_abierta and not reporte and not caja_cerrada %}
 <div class="alert alert-warning shadow-sm d-flex justify-content-between align-items-center flex-wrap gap-2">
     <div>
@@ -93,7 +105,7 @@ body{background:#f5f6fa}
     </button>
 </div>
 {% endif %}
- 
+
 {% if reporte %}
 <div class="d-flex justify-content-between align-items-center mb-4">
     <div>
@@ -102,7 +114,7 @@ body{background:#f5f6fa}
     </div>
     <a href="/" class="btn btn-outline-dark"><i class="fa-solid fa-arrow-left"></i> Inicio</a>
 </div>
- 
+
 <div class="row g-3 mb-4">
     <div class="col-6 col-md-3"><div class="card shadow-sm"><div class="card-body">
         <small class="text-muted">Ventas</small><h3>L. {{ "%.2f"|format(ventas_hoy) }}</h3>
@@ -117,7 +129,7 @@ body{background:#f5f6fa}
         <small class="text-muted">Pedidos vendidos</small><h3>{{ pedidos_hoy }}</h3>
     </div></div></div>
 </div>
- 
+
 <div class="card shadow-sm mb-4">
 <div class="card-header bg-white"><h5 class="mb-0">Productos vendidos hoy</h5></div>
 <div class="card-body table-responsive">
@@ -132,7 +144,7 @@ body{background:#f5f6fa}
 </tbody>
 </table>
 </div></div>
- 
+
 <div class="card shadow-sm">
 <div class="card-header bg-white"><h5 class="mb-0">Cierres anteriores</h5></div>
 <div class="card-body table-responsive">
@@ -150,9 +162,9 @@ body{background:#f5f6fa}
 {% endfor %}
 </tbody></table>
 </div></div>
- 
+
 {% else %}
- 
+
 <div class="row g-3 mb-4">
     <div class="col-6 col-md-3"><div class="card shadow-sm stat-card"><div class="card-body">
         <h6 class="text-muted">Ventas de hoy</h6><div class="stat-number text-primary">L. {{ "%.2f"|format(ventas_hoy) }}</div>
@@ -167,7 +179,7 @@ body{background:#f5f6fa}
         <h6 class="text-muted">Pedidos vendidos</h6><div class="stat-number">{{ pedidos_hoy }}</div>
     </div></div></div>
 </div>
- 
+
 <div id="ventas" class="d-flex justify-content-between flex-wrap gap-2 mb-4">
     {% if not caja_abierta and not caja_cerrada %}
     <button class="btn btn-warning" data-bs-toggle="modal" data-bs-target="#modalAbrirCaja">
@@ -182,13 +194,13 @@ body{background:#f5f6fa}
     </button>
     <a href="/reportes" class="btn btn-dark"><i class="fa-solid fa-chart-column"></i> Ver reportes</a>
 </div>
- 
+
 {% if caja_cerrada %}
 <div class="alert alert-danger"><i class="fa-solid fa-lock"></i>
     <strong>La caja de hoy está cerrada.</strong> Las ventas y retiros están bloqueados.
 </div>
 {% endif %}
- 
+
 <div class="card shadow-sm mb-4" id="ventas">
 <div class="card-header bg-white"><h5 class="mb-0"><i class="fa-solid fa-clipboard-list"></i> Pedidos activos</h5></div>
 <div class="card-body table-responsive">
@@ -198,7 +210,9 @@ body{background:#f5f6fa}
 {% for p in pedidos %}
 <tr>
 <td><strong>PED-{{ "%04d"|format(p.id) }}</strong></td>
-<td>{{ p.cliente }}</td>
+<td>{{ p.cliente }}
+{% if p.notas %}<br><span class="nota-pedido"><i class="fa-solid fa-note-sticky"></i> {{ p.notas }}</span>{% endif %}
+</td>
 <td><strong>L. {{ "%.2f"|format(p.total) }}</strong></td>
 <td>{{ p.metodo_pago }}</td>
 <td>
@@ -230,7 +244,7 @@ body{background:#f5f6fa}
 {% endfor %}
 </tbody></table>
 </div></div>
- 
+
 <div class="card shadow-sm mb-4" id="inventario">
 <div class="card-header bg-white d-flex justify-content-between">
 <h5 class="mb-0"><i class="fa-solid fa-boxes-stacked"></i> Productos e inventario</h5>
@@ -257,7 +271,7 @@ body{background:#f5f6fa}
 <div class="text-center text-muted">Todavía no hay productos.</div>
 {% endfor %}
 </div></div></div>
- 
+
 <div class="card shadow-sm mb-4" id="historial">
 <div class="card-header bg-white"><h5 class="mb-0"><i class="fa-solid fa-box-archive"></i> Historial / Archivador</h5></div>
 <div class="card-body table-responsive">
@@ -266,7 +280,10 @@ body{background:#f5f6fa}
 <tbody>
 {% for h in historial %}
 <tr>
-<td>PED-{{ "%04d"|format(h.id) }}</td><td>{{ h.cliente }}</td>
+<td>PED-{{ "%04d"|format(h.id) }}</td>
+<td>{{ h.cliente }}
+{% if h.notas %}<br><span class="nota-pedido"><i class="fa-solid fa-note-sticky"></i> {{ h.notas }}</span>{% endif %}
+</td>
 <td>L. {{ "%.2f"|format(h.total) }}</td><td>{{ h.metodo_pago }}</td>
 <td>{% if h.estado=="Cancelado" %}<span class="badge bg-danger">Cancelado</span>{% else %}<span class="badge bg-primary">Archivado</span>{% endif %}</td>
 <td>{{ h.fecha }}</td>
@@ -276,7 +293,7 @@ body{background:#f5f6fa}
 {% endfor %}
 </tbody></table>
 </div></div>
- 
+
 <div class="card shadow-sm mb-4" id="caja">
 <div class="card-header bg-white"><h5 class="mb-0"><i class="fa-solid fa-cash-register"></i> Caja</h5></div>
 <div class="card-body">
@@ -291,7 +308,7 @@ body{background:#f5f6fa}
     Monto inicial + ventas en efectivo - retiros =
     <strong>L. {{ "%.2f"|format(total_caja) }}</strong>
 </div>
- 
+
 <!-- NOTAS DE GASTO / RETIRO: aquí se ve el motivo de cada retiro -->
 <div class="mt-4">
     <h6 class="fw-bold mb-3"><i class="fa-solid fa-note-sticky"></i> Retiros de hoy (motivo del gasto)</h6>
@@ -307,7 +324,7 @@ body{background:#f5f6fa}
     <div class="text-muted text-center py-2">Todavía no se han registrado retiros hoy.</div>
     {% endfor %}
 </div>
- 
+
 <hr>
 {% if not caja_abierta and not caja_cerrada %}
 <button class="btn btn-warning" data-bs-toggle="modal" data-bs-target="#modalAbrirCaja">
@@ -321,9 +338,18 @@ body{background:#f5f6fa}
 <div class="alert alert-success mb-0"><i class="fa-solid fa-lock"></i> Caja cerrada correctamente. Monto inicial: L. {{ "%.2f"|format(monto_inicial) }} · Efectivo esperado: L. {{ "%.2f"|format(total_caja) }}</div>
 {% endif %}
 </div></div>
- 
-<div id="config"></div>
- 
+
+<div class="card shadow-sm mb-4" id="config">
+<div class="card-header bg-white"><h5 class="mb-0"><i class="fa-solid fa-gear"></i> Configuración y respaldo</h5></div>
+<div class="card-body">
+    <p class="text-muted mb-3">Descarga una copia de tus datos para abrirla en Excel.</p>
+    <div class="d-flex flex-wrap gap-2">
+        <a href="/exportar/inventario" class="btn btn-outline-success"><i class="fa-solid fa-file-csv"></i> Descargar inventario</a>
+        <a href="/exportar/pedidos" class="btn btn-outline-success"><i class="fa-solid fa-file-csv"></i> Descargar pedidos</a>
+        <a href="/salir" class="btn btn-outline-dark"><i class="fa-solid fa-right-from-bracket"></i> Salir</a>
+    </div>
+</div></div>
+
 <!-- MODAL ABRIR CAJA -->
 <div class="modal fade" id="modalAbrirCaja">
 <div class="modal-dialog"><div class="modal-content">
@@ -349,7 +375,7 @@ body{background:#f5f6fa}
 </div>
 </form>
 </div></div></div>
- 
+
 <!-- MODAL PRODUCTO -->
 <div class="modal fade" id="modalProducto">
 <div class="modal-dialog"><div class="modal-content">
@@ -368,7 +394,7 @@ body{background:#f5f6fa}
 </div>
 <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button><button class="btn btn-success">Guardar producto</button></div>
 </form></div></div></div>
- 
+
 <!-- MODAL PEDIDO -->
 <div class="modal fade" id="modalPedido">
 <div class="modal-dialog modal-lg"><div class="modal-content">
@@ -377,6 +403,8 @@ body{background:#f5f6fa}
 <div class="modal-body">
 <label class="form-label">Cliente</label><input name="cliente" class="form-control mb-3" required>
 <label class="form-label">Dirección</label><input name="direccion" class="form-control mb-3">
+<label class="form-label">Notas del pedido <small class="text-muted">(opcional)</small></label>
+<textarea name="notas" class="form-control mb-3" rows="2" maxlength="300" placeholder="Ej: sin cebolla, sin salsa, bien cocido"></textarea>
 <label class="form-label">Método de pago</label>
 <select name="metodo_pago" class="form-select mb-4"><option>Efectivo</option><option>Transferencia</option></select>
 <hr><h6>Productos</h6>
@@ -399,7 +427,7 @@ body{background:#f5f6fa}
 </div>
 <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button><button class="btn btn-primary">Guardar pedido</button></div>
 </form></div></div></div>
- 
+
 <!-- MODAL RETIRO -->
 <div class="modal fade" id="modalRetiro">
 <div class="modal-dialog"><div class="modal-content">
@@ -413,14 +441,14 @@ body{background:#f5f6fa}
 </div>
 <div class="modal-footer"><button class="btn btn-warning">Registrar retiro</button></div>
 </form></div></div></div>
- 
+
 {% endif %}
 </div>
- 
+
 <script>
 function abrirMenu(){document.getElementById("sidebar").classList.add("active");document.getElementById("overlay").classList.add("active")}
 function cerrarMenu(){document.getElementById("sidebar").classList.remove("active");document.getElementById("overlay").classList.remove("active")}
- 
+
 function agregarProducto(){
     const cont=document.getElementById("productosPedido");
     const primera=document.querySelector(".producto-linea");
