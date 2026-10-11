@@ -1,21 +1,45 @@
+import csv
+import hmac
+import io
 import logging
 import os
+import secrets
 import sqlite3
-from datetime import datetime, date
+import time
+from datetime import datetime, timedelta, timezone
 from functools import wraps
- 
+
 from flask import (
     Flask, render_template, request, redirect,
-    url_for, flash, g
+    url_for, flash, g, session, Response
 )
  
 # ---------------------------------------------------------------------------
 # Configuración
 # ---------------------------------------------------------------------------
+# Donde se guarda la base de datos. En Render se pone VENDIX_DB=/var/data/vendix.db
+# (la carpeta del disco persistente) para que los datos NO se borren.
 DATABASE = os.environ.get("VENDIX_DB", "vendix.db")
- 
+_carpeta_db = os.path.dirname(DATABASE)
+if _carpeta_db:
+    os.makedirs(_carpeta_db, exist_ok=True)
+
+# Zona horaria (Honduras = UTC-6, sin cambio de hora). Evita que la caja
+# "cambie de dia" a las 6 PM por usar la hora del servidor (UTC).
+ZONA = timezone(timedelta(hours=float(os.environ.get("VENDIX_UTC_OFFSET", "-6"))))
+
+# Acceso con usuario y clave (se configuran en Render > Environment).
+USUARIO = os.environ.get("VENDIX_USUARIO", "admin")
+CLAVE = os.environ.get("VENDIX_CLAVE", "")
+
 app = Flask(__name__)
-app.secret_key = os.environ.get("VENDIX_SECRET_KEY", "cambia-esta-clave-en-produccion")
+app.secret_key = os.environ.get("VENDIX_SECRET_KEY") or secrets.token_hex(32)
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    SESSION_COOKIE_SECURE=bool(os.environ.get("RENDER")),
+    PERMANENT_SESSION_LIFETIME=timedelta(days=30),
+)
  
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("vendix")
@@ -63,6 +87,7 @@ def crear_base():
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 cliente TEXT NOT NULL,
                 direccion TEXT DEFAULT '',
+                notas TEXT DEFAULT '',
                 metodo_pago TEXT NOT NULL,
                 total REAL NOT NULL DEFAULT 0,
                 estado TEXT NOT NULL DEFAULT 'Pendiente',
@@ -118,6 +143,8 @@ def crear_base():
         nombres = [c["name"] for c in columnas]
         if "fecha_archivado" not in nombres:
             conn.execute("ALTER TABLE pedidos ADD COLUMN fecha_archivado TEXT DEFAULT NULL")
+        if "notas" not in nombres:
+            conn.execute("ALTER TABLE pedidos ADD COLUMN notas TEXT DEFAULT ''")
  
         conn.commit()
     finally:
@@ -131,11 +158,11 @@ crear_base()
 # Helpers de fecha / caja
 # ---------------------------------------------------------------------------
 def hoy():
-    return date.today().strftime("%Y-%m-%d")
+    return datetime.now(ZONA).strftime("%Y-%m-%d")
  
  
 def ahora():
-    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    return datetime.now(ZONA).strftime("%Y-%m-%d %H:%M:%S")
  
  
 def formatear_hora(fecha_texto):
@@ -258,6 +285,73 @@ def requiere_caja_no_cerrada(vista):
     return envoltura
  
  
+# ---------------------------------------------------------------------------
+# Acceso (login)
+# ---------------------------------------------------------------------------
+_intentos = {}  # ip -> lista de momentos de intentos fallidos
+MAX_INTENTOS = 5
+VENTANA_SEG = 600
+
+
+def _ip_cliente():
+    # Detras del proxy de Render, el ultimo valor es el que agrega Render.
+    reenviado = request.headers.get("X-Forwarded-For", "")
+    if reenviado:
+        return reenviado.split(",")[-1].strip()
+    return request.remote_addr or "desconocida"
+
+
+def _bloqueado(ip):
+    ahora_t = time.time()
+    recientes = [t for t in _intentos.get(ip, []) if ahora_t - t < VENTANA_SEG]
+    _intentos[ip] = recientes
+    return len(recientes) >= MAX_INTENTOS
+
+
+@app.before_request
+def exigir_login():
+    if request.endpoint in ("login", "static", "salud"):
+        return None
+    if not session.get("autenticado"):
+        return redirect(url_for("login"))
+    return None
+
+
+@app.route("/salud")
+def salud():
+    return "ok"
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if request.method == "POST":
+        ip = _ip_cliente()
+        if not CLAVE:
+            flash("Falta configurar la clave (VENDIX_CLAVE) en el servidor.", "danger")
+        elif _bloqueado(ip):
+            flash("Demasiados intentos. Espera 10 minutos e intenta de nuevo.", "warning")
+        else:
+            usuario = request.form.get("usuario", "")
+            clave = request.form.get("clave", "")
+            ok_usuario = hmac.compare_digest(usuario.encode(), USUARIO.encode())
+            ok_clave = hmac.compare_digest(clave.encode(), CLAVE.encode())
+            if ok_usuario and ok_clave:
+                session.clear()
+                session["autenticado"] = True
+                session.permanent = True
+                _intentos.pop(ip, None)
+                return redirect(url_for("inicio"))
+            _intentos.setdefault(ip, []).append(time.time())
+            flash("Usuario o clave incorrectos.", "danger")
+    return render_template("login.html")
+
+
+@app.route("/salir")
+def salir():
+    session.clear()
+    return redirect(url_for("login"))
+
+
 # ---------------------------------------------------------------------------
 # Vista principal
 # ---------------------------------------------------------------------------
@@ -388,6 +482,7 @@ def crear_pedido():
     try:
         cliente = request.form.get("cliente", "").strip()
         direccion = request.form.get("direccion", "").strip()
+        notas = request.form.get("notas", "").strip()[:300]
         metodo_pago = request.form.get("metodo_pago", "Efectivo")
         ids = request.form.getlist("producto_id[]")
         cantidades = request.form.getlist("cantidad[]")
@@ -438,9 +533,9 @@ def crear_pedido():
             detalles.append((producto_id, cantidad, producto["precio"], subtotal))
  
         cur = conn.execute("""
-            INSERT INTO pedidos (cliente,direccion,metodo_pago,total,estado,fecha)
-            VALUES (?,?,?,?,?,?)
-        """, (cliente, direccion, metodo_pago, round(total, 2), "Pendiente", ahora()))
+            INSERT INTO pedidos (cliente,direccion,notas,metodo_pago,total,estado,fecha)
+            VALUES (?,?,?,?,?,?,?)
+        """, (cliente, direccion, notas, metodo_pago, round(total, 2), "Pendiente", ahora()))
  
         pedido_id = cur.lastrowid
  
@@ -650,6 +745,69 @@ def cerrar_caja():
     return redirect(url_for("inicio"))
  
  
+# ---------------------------------------------------------------------------
+# Respaldo: exportar a CSV (se abre en Excel)
+# ---------------------------------------------------------------------------
+def _seguro(valor):
+    """Evita que Excel interprete texto como formula (=, +, -, @)."""
+    if isinstance(valor, str) and valor[:1] in ("=", "+", "-", "@"):
+        return "'" + valor
+    return valor
+
+
+def _csv_respuesta(nombre, encabezados, filas):
+    salida = io.StringIO()
+    escritor = csv.writer(salida)
+    escritor.writerow(encabezados)
+    for fila in filas:
+        escritor.writerow([_seguro(v) for v in fila])
+    contenido = "\ufeff" + salida.getvalue()  # BOM para que Excel lea las tildes
+    return Response(
+        contenido,
+        mimetype="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f"attachment; filename={nombre}"},
+    )
+
+
+@app.route("/exportar/inventario")
+def exportar_inventario():
+    filas = get_db().execute(
+        "SELECT nombre, categoria, precio, stock, unidad, stock_minimo "
+        "FROM productos ORDER BY categoria, nombre"
+    ).fetchall()
+    return _csv_respuesta(
+        f"inventario_{hoy()}.csv",
+        ["Producto", "Categoria", "Precio", "Stock", "Unidad", "Stock minimo"],
+        [tuple(f) for f in filas],
+    )
+
+
+@app.route("/exportar/pedidos")
+def exportar_pedidos():
+    filas = get_db().execute(
+        "SELECT id, fecha, cliente, direccion, notas, metodo_pago, total, estado "
+        "FROM pedidos ORDER BY id DESC"
+    ).fetchall()
+    return _csv_respuesta(
+        f"pedidos_{hoy()}.csv",
+        ["Pedido", "Fecha", "Cliente", "Direccion", "Notas", "Pago", "Total", "Estado"],
+        [(f"PED-{f['id']:04d}",) + tuple(f)[1:] for f in filas],
+    )
+
+
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=5000, debug=False)
- 
+    puerto = os.environ.get("PORT")
+    if puerto:
+        # En un servidor (Render): escuchar en todas las interfaces.
+        app.run(host="0.0.0.0", port=int(puerto), debug=False)
+    else:
+        # En tu computadora: abrir el navegador automaticamente.
+        import webbrowser
+        import threading
+
+        def abrir_navegador():
+            webbrowser.open("http://127.0.0.1:5000")
+
+        threading.Timer(1.5, abrir_navegador).start()
+        app.run(host="127.0.0.1", port=5000, debug=False)
+   
