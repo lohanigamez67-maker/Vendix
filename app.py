@@ -4,7 +4,9 @@ import io
 import logging
 import os
 import secrets
+import socket
 import sqlite3
+import sys
 import time
 from datetime import datetime, timedelta, timezone
 from functools import wraps
@@ -19,7 +21,16 @@ from flask import (
 # ---------------------------------------------------------------------------
 # Donde se guarda la base de datos. En Render se pone VENDIX_DB=/var/data/vendix.db
 # (la carpeta del disco persistente) para que los datos NO se borren.
+# True cuando el programa corre como .exe (version para la computadora del cliente).
+EMPAQUETADO = bool(getattr(sys, "frozen", False))
+BASE_DIR = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
+
 DATABASE = os.environ.get("VENDIX_DB", "vendix.db")
+if EMPAQUETADO and "VENDIX_DB" not in os.environ:
+    # En el .exe los datos se guardan en una carpeta fija del usuario,
+    # para que NO se pierdan al cerrar o actualizar el programa.
+    _base_datos = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
+    DATABASE = os.path.join(_base_datos, "Vendix", "vendix.db")
 _carpeta_db = os.path.dirname(DATABASE)
 if _carpeta_db:
     os.makedirs(_carpeta_db, exist_ok=True)
@@ -32,7 +43,7 @@ ZONA = timezone(timedelta(hours=float(os.environ.get("VENDIX_UTC_OFFSET", "-6"))
 USUARIO = os.environ.get("VENDIX_USUARIO", "admin")
 CLAVE = os.environ.get("VENDIX_CLAVE", "")
 
-app = Flask(__name__)
+app = Flask(__name__, template_folder=os.path.join(BASE_DIR, "templates"))
 app.secret_key = os.environ.get("VENDIX_SECRET_KEY") or secrets.token_hex(32)
 app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
@@ -310,6 +321,9 @@ def _bloqueado(ip):
 
 @app.before_request
 def exigir_login():
+    if EMPAQUETADO:
+        # Version .exe: solo se abre en esa computadora (127.0.0.1), sin login.
+        return None
     if request.endpoint in ("login", "static", "salud"):
         return None
     if not session.get("autenticado"):
@@ -746,6 +760,40 @@ def cerrar_caja():
  
  
 # ---------------------------------------------------------------------------
+# Borrar datos de prueba
+# ---------------------------------------------------------------------------
+@app.route("/eliminar_producto/<int:id>", methods=["POST"])
+def eliminar_producto(id):
+    conn = get_db()
+    usado = conn.execute(
+        "SELECT COUNT(*) FROM detalle_pedido WHERE producto_id=?", (id,)
+    ).fetchone()[0]
+    if usado:
+        flash("Este producto ya tiene pedidos en el historial y no se puede eliminar. "
+              "Ponle el stock en 0.", "warning")
+        return redirect(url_for("inicio"))
+    conn.execute("DELETE FROM productos WHERE id=?", (id,))
+    conn.commit()
+    flash("Producto eliminado.", "success")
+    return redirect(url_for("inicio"))
+
+
+@app.route("/reiniciar_datos", methods=["POST"])
+def reiniciar_datos():
+    if request.form.get("confirmacion", "").strip().upper() != "BORRAR":
+        flash("No se borro nada. Para borrar todo debes escribir BORRAR.", "warning")
+        return redirect(url_for("inicio"))
+    conn = get_db()
+    for tabla in ("detalle_pedido", "pedidos", "retiros", "cierres_caja",
+                  "cajas_diarias", "productos"):
+        conn.execute(f"DELETE FROM {tabla}")
+    conn.execute("DELETE FROM sqlite_sequence")  # los numeros PED-0001 vuelven a empezar
+    conn.commit()
+    flash("Listo: se borraron todos los datos. Puedes empezar de cero.", "success")
+    return redirect(url_for("inicio"))
+
+
+# ---------------------------------------------------------------------------
 # Respaldo: exportar a CSV (se abre en Excel)
 # ---------------------------------------------------------------------------
 def _seguro(valor):
@@ -801,13 +849,25 @@ if __name__ == "__main__":
         # En un servidor (Render): escuchar en todas las interfaces.
         app.run(host="0.0.0.0", port=int(puerto), debug=False)
     else:
-        # En tu computadora: abrir el navegador automaticamente.
+        # En una computadora: abrir el navegador automaticamente.
         import webbrowser
         import threading
 
-        def abrir_navegador():
-            webbrowser.open("http://127.0.0.1:5000")
+        # Sin consola, stdout/stderr pueden ser None y Flask se cae.
+        if sys.stdout is None:
+            sys.stdout = open(os.devnull, "w")
+        if sys.stderr is None:
+            sys.stderr = open(os.devnull, "w")
 
-        threading.Timer(1.5, abrir_navegador).start()
+        url = "http://127.0.0.1:5000"
+
+        # Si Vendix ya esta abierto, solo abrir el navegador.
+        with socket.socket() as prueba:
+            if prueba.connect_ex(("127.0.0.1", 5000)) == 0:
+                webbrowser.open(url)
+                sys.exit(0)
+
+        threading.Timer(1.5, lambda: webbrowser.open(url)).start()
+        if EMPAQUETADO:
+            print("Vendix esta funcionando. No cierres esta ventana mientras lo uses.")
         app.run(host="127.0.0.1", port=5000, debug=False)
-   
