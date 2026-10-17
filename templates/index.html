@@ -266,6 +266,9 @@ body{background:#f5f6fa}
 <input type="number" step="0.1" name="nuevo_stock" value="{{ producto.stock }}" class="form-control form-control-sm">
 <button class="btn btn-sm btn-primary ms-1"><i class="fa-solid fa-save"></i></button>
 </form>
+<form action="/eliminar_producto/{{ producto.id }}" method="POST" class="mt-2" onsubmit="return confirm('¿Eliminar este producto?')">
+<button class="btn btn-sm btn-outline-danger w-100"><i class="fa-solid fa-trash"></i> Eliminar producto</button>
+</form>
 </div></div>
 {% else %}
 <div class="text-center text-muted">Todavía no hay productos.</div>
@@ -348,6 +351,13 @@ body{background:#f5f6fa}
         <a href="/exportar/pedidos" class="btn btn-outline-success"><i class="fa-solid fa-file-csv"></i> Descargar pedidos</a>
         <a href="/salir" class="btn btn-outline-dark"><i class="fa-solid fa-right-from-bracket"></i> Salir</a>
     </div>
+    <hr class="my-4">
+    <h6 class="text-danger fw-bold"><i class="fa-solid fa-triangle-exclamation"></i> Empezar de cero</h6>
+    <p class="text-muted small mb-2">Borra TODOS los productos, pedidos, caja y retiros. Úsalo solo para quitar los datos de prueba. No se puede deshacer.</p>
+    <form action="/reiniciar_datos" method="POST" class="d-flex flex-wrap gap-2" onsubmit="return confirm('¿Seguro? Se borrará todo y no se puede deshacer.')">
+        <input name="confirmacion" class="form-control" style="max-width:220px" placeholder="Escribe BORRAR" autocomplete="off" required>
+        <button class="btn btn-danger"><i class="fa-solid fa-trash"></i> Borrar todo</button>
+    </form>
 </div></div>
 
 <!-- MODAL ABRIR CAJA -->
